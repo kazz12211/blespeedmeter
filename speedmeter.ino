@@ -36,7 +36,7 @@ void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
     }
     double speed = root["speed"];
     Serial.print("SPEED: ");
-    Serial.print(speed, 1);
+    Serial.print(speed, 0);
     Serial.println("km/h");
   }
 }
@@ -53,7 +53,7 @@ void readUart(char data[], uint16_t len) {
   }
   double speed = root["speed"];
   Serial.print("SPEED: ");
-  Serial.print(speed, 1);
+  Serial.print(speed, 0);
   Serial.println("km/h");
   
 }
@@ -86,8 +86,8 @@ void setup() {
   }
 
   ble.sendCommandCheckOK("AT+GAPDEVNAME=Speedmeter");
-  ble.sendCommandCheckOK(F("AT+GATTADDSERVICE=uuid=0x1230"));
-  ble.sendCommandWithIntReply(F("AT+GATTADDCHAR=UUID=0x0001, PROPERTIES=0x08, MIN_LEN=2, MAX_LEN=20, DATATYPE=string, DESCRIPTION=Speed(JSON),VALUE={speed:0}"), &speedmeterId);
+  ble.sendCommandCheckOK(F("AT+GATTADDSERVICE=UUID128=6E-40-00-01-B5-A3-F3-93-E0-A9-E5-0E-24-DC-CA-9F"));
+  ble.sendCommandWithIntReply(F("AT+GATTADDCHAR=UUID128=6E-40-00-02-B5-A3-F3-93-E0-A9-E5-0E-24-DC-CA-9F, PROPERTIES=0x08, MIN_LEN=2, MAX_LEN=20, DATATYPE=string, DESCRIPTION=Speed,VALUE={speed:0}"), &speedmeterId);
   ble.sendCommandCheckOK( "AT+GAPSETADVDATA=02-01-06-05-02-0d-18-0a-18" );
   ble.reset();
   ble.setBleGattRxCallback(speedmeterId, readSpeed);
