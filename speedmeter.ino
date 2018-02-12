@@ -11,27 +11,79 @@
 
 #include "BluefruitConfig.h"
 
+
+
+#define USE_TFT 1
+
+#ifdef USE_TFT
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
+#else
 #include "SO1602A.h"
+#endif
 
 #define FACTORYRESET_ENABLE      1
 //#define MODE_LED_BEHAVIOUR          "MODE"
 
 Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ,BLUEFRUIT_SPI_RST);
+#ifndef USE_TFT
 SO1602A lcd(0x3c, 127);
+#else
+#define TFT_CS     10
+#define TFT_RST    9  // you can also connect this to the Arduino reset
+                      // in which case, set this #define pin to 0!
+#define TFT_DC     8
+#define TFT_SCLK 13   // set these to be whatever pins you like!
+#define TFT_MOSI 11   // set these to be whatever pins you like!
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC,TFT_MOSI, TFT_SCLK,  TFT_RST);
+#endif
 
 int32_t speedmeterId;
+double lastSpeed = 0;
 
 void error(const __FlashStringHelper*err) {
   Serial.println(err);
   while (1);
 }
 
+void showStatus(char status[]) {
+  #ifndef USE_TFT
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(status);
+  #else
+  tft.fillRect(10, 10, 150, 12, ST7735_BLACK);
+  tft.setCursor(10, 10);
+  tft.setTextColor(ST7735_WHITE);
+  tft.setTextWrap(true);
+  tft.print(status);
+  #endif
+}
+
 void displaySpeed(double value) {
+  #ifndef USE_TFT
   lcd.setCursor(0, 1);
   lcd.print("                ");
   lcd.setCursor(0, 1);
   lcd.print(value, 0);
   lcd.print("km/h");
+  #else
+  tft.fillRect(40, 40, 70, 32, ST7735_BLACK);
+  tft.setTextColor(ST7735_WHITE);
+  tft.setTextWrap(true);
+  if(value >= 10 && value < 100) {
+    tft.setCursor(64, 40);
+  } else if(value >= 100) {
+    tft.setCursor(40, 40);
+  } else {
+    tft.setCursor(88, 40);
+  }
+  tft.setTextSize(4);
+  tft.print(value, 0);
+  tft.setCursor(112, 60);
+  tft.setTextSize(1);
+  tft.print("km/h");
+  #endif
 }
 
 void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
@@ -49,7 +101,9 @@ void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
     Serial.print("SPEED: ");
     Serial.print(speed, 0);
     Serial.println("km/h");
-    displaySpeed(speed);
+    if(lastSpeed != speed) {
+      displaySpeed(speed);
+    }
   }
 }
 
@@ -72,27 +126,31 @@ void readUart(char data[], uint16_t len) {
 }
 
 void connected() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("CONNECTED");
+  showStatus("CONNECTED");
+  displaySpeed(0);
 }
 
 void disconnected() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("WAITING...");
+  showStatus("WAITING...");
 }
 
 void setup() {
-  while(!Serial);
+  //while(!Serial);
   delay(500);
   Serial.begin(9600);
   Serial.println("Bluefruit LE Micro Battery Monitor");
   Serial.print(F("Initializing Bluefruit LE Micro"));
-  
+
+  #ifndef USE_TFT
   lcd.begin(16, 2, LCD_5x8DOTS);
   lcd.setCursor(0, 0);
   lcd.print("INITIALIZING...");
+  #else
+  tft.initR(INITR_BLACKTAB);   // initialize a ST7735S chip, black tab
+  tft.setRotation(1);
+  tft.fillScreen(ST7735_BLACK);
+  showStatus("INITIALIZING...");
+  #endif
   
   if(!ble.begin(VERBOSE_MODE)) {
     error(F("Couldn't find Bluefruit"));
@@ -126,9 +184,7 @@ void setup() {
   ble.setBleGattRxCallback(speedmeterId, readSpeed);
   ble.setBleUartRxCallback(readUart);
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("WAITING...");
+  disconnected(); 
 }
 
 void loop() {
