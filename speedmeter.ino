@@ -183,7 +183,9 @@ void setup() {
   {
     /* Perform a factory reset to make sure everything is in a known state */
     Serial.println(F("Performing a factory reset: "));
+    showStatus("FACTORY RESET");
     if ( ! ble.factoryReset() ){
+      showStatus("FACTORY RESET FAILED");
       error(F("Couldn't factory reset"));
     }
   }
@@ -201,6 +203,7 @@ void setup() {
   ble.sendCommandWithIntReply(F("AT+GATTADDCHAR=UUID128=6E-40-00-02-B5-A3-F3-93-E0-A9-E5-0E-24-DC-CA-9F, PROPERTIES=0x08, MIN_LEN=2, MAX_LEN=20, DATATYPE=string, DESCRIPTION=Speed,VALUE={speed:0}"), &speedmeterId);
   ble.sendCommandCheckOK( "AT+GAPSETADVDATA=02-01-06-05-02-0d-18-0a-18" );
   ble.reset();
+  delay(200);
   ble.setConnectCallback(connected);
   ble.setDisconnectCallback(disconnected);
   ble.setBleGattRxCallback(speedmeterId, readSpeed);
