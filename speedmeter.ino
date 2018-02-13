@@ -14,28 +14,34 @@
 
 
 #define USE_TFT 1
+#define USE_PDQ 1
 
-#ifdef USE_TFT
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7735.h>
+#if USE_TFT
+  #if USE_PDQ
+    #include <PDQ_GFX.h>
+    #include "PDQ_ST7735_config.h"
+    #include <PDQ_ST7735.h>
+  #else
+    #include <Adafruit_GFX.h>
+    #include "Adafruit_ST7735_config.h"
+    #include <Adafruit_ST7735.h>
+  #endif
 #else
-#include "SO1602A.h"
+  #include "SO1602A.h"
 #endif
 
 #define FACTORYRESET_ENABLE      1
 //#define MODE_LED_BEHAVIOUR          "MODE"
 
 Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ,BLUEFRUIT_SPI_RST);
-#ifndef USE_TFT
-SO1602A lcd(0x3c, 127);
+#if USE_TFT
+  #if USE_PDQ
+    PDQ_ST7735 tft;
+  #else
+    Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC,TFT_MOSI, TFT_SCLK,  TFT_RST);
+  #endif
 #else
-#define TFT_CS     10
-#define TFT_RST    9  // you can also connect this to the Arduino reset
-                      // in which case, set this #define pin to 0!
-#define TFT_DC     8
-#define TFT_SCLK 13   // set these to be whatever pins you like!
-#define TFT_MOSI 11   // set these to be whatever pins you like!
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC,TFT_MOSI, TFT_SCLK,  TFT_RST);
+  SO1602A lcd(0x3c, 127);
 #endif
 
 int32_t speedmeterId;
@@ -47,60 +53,69 @@ void error(const __FlashStringHelper*err) {
 }
 
 void showStatus(char status[]) {
-  #ifndef USE_TFT
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print(status);
+  Serial.println(status);
+  #if USE_TFT
+    tft.fillRect(10, 10, 150, 12, ST7735_BLACK);
+    tft.setCursor(10, 10);
+    tft.setTextColor(ST7735_WHITE);
+    tft.setTextWrap(true);
+    tft.print(status);
   #else
-  tft.fillRect(10, 10, 150, 12, ST7735_BLACK);
-  tft.setCursor(10, 10);
-  tft.setTextColor(ST7735_WHITE);
-  tft.setTextWrap(true);
-  tft.print(status);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(status);
   #endif
 }
 
 void displaySpeed(double value) {
-  #ifndef USE_TFT
-  lcd.setCursor(0, 1);
-  lcd.print("                ");
-  lcd.setCursor(0, 1);
-  lcd.print(value, 0);
-  lcd.print("km/h");
+  #if USE_TFT
+    tft.fillRect(40, 40, 70, 32, ST7735_BLACK);
+    tft.setTextColor(ST7735_WHITE);
+    tft.setTextWrap(true);
+    if(value >= 10 && value < 100) {
+      tft.setCursor(64, 40);
+    } else if(value >= 100) {
+      tft.setCursor(40, 40);
+    } else {
+      tft.setCursor(88, 40);
+    }
+    tft.setTextSize(4);
+    tft.print(value, 0);
+    tft.setCursor(112, 60);
+    tft.setTextSize(1);
+    tft.print("km/h");
   #else
-  tft.fillRect(40, 40, 70, 32, ST7735_BLACK);
-  tft.setTextColor(ST7735_WHITE);
-  tft.setTextWrap(true);
-  if(value >= 10 && value < 100) {
-    tft.setCursor(64, 40);
-  } else if(value >= 100) {
-    tft.setCursor(40, 40);
-  } else {
-    tft.setCursor(88, 40);
-  }
-  tft.setTextSize(4);
-  tft.print(value, 0);
-  tft.setCursor(112, 60);
-  tft.setTextSize(1);
-  tft.print("km/h");
+    lcd.setCursor(0, 1);
+    lcd.print("                ");
+    lcd.setCursor(0, 1);
+    lcd.print(value, 0);
+    lcd.print("km/h");
   #endif
+}
+
+double parseSpeed(uint8_t data[], uint16_t len) {
+  Serial.write(data, len);
+  Serial.println();
+  
+  StaticJsonBuffer<64> jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(data);
+  if(!root.success()) {
+    Serial.println("parseObject() failed");
+    return 0;
+  }
+  double speed = root["speed"];
+  Serial.print("SPEED: ");
+  Serial.print(speed, 0);
+  Serial.println();
+  lastSpeed = speed;
+  return speed;
 }
 
 void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
   Serial.println("Read Characteristic");
-  Serial.write(data, len);
-  Serial.println();
-  
+   
   if(charId == speedmeterId) {
-   StaticJsonBuffer<256> jsonBuffer;
-   JsonObject& root = jsonBuffer.parseObject(data);
-    if(!root.success()) {
-      Serial.println("readSpeed: parseObject() failed");
-    }
-    double speed = root["speed"];
-    Serial.print("SPEED: ");
-    Serial.print(speed, 0);
-    Serial.println("km/h");
+    double speed = parseSpeed(data, len);
     if(lastSpeed != speed) {
       displaySpeed(speed);
     }
@@ -109,20 +124,11 @@ void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
 
 void readUart(char data[], uint16_t len) {
   Serial.println("Read UART");
-  Serial.write(data, len);
-  Serial.println();
   
-  StaticJsonBuffer<256> jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(data);
-  if(!root.success()) {
-    Serial.println("readUart: parseObject() failed");
+  double speed = parseSpeed(data, len);
+  if(lastSpeed != speed) {
+    displaySpeed(speed);
   }
-  double speed = root["speed"];
-  Serial.print("SPEED: ");
-  Serial.print(speed, 0);
-  Serial.println("km/h");
-  displaySpeed(speed);
-  
 }
 
 void connected() {
@@ -132,30 +138,46 @@ void connected() {
 
 void disconnected() {
   showStatus("WAITING...");
+  displaySpeed(0);
+}
+
+void initDisplay() {
+  #if USE_TFT
+    #if USE_PDQ
+      #if defined(ST7735_RST_PIN)
+        FastPin<ST7735_RST_PIN>::setOutput();
+        FastPin<ST7735_RST_PIN>::hi();
+        FastPin<ST7735_RST_PIN>::lo();
+        delay(1);
+        FastPin(ST7735_RST_PIN>::hi();
+      #endif
+      tft.begin();
+    #else
+      tft.initR(INITR_BLACKTAB);   // initialize a ST7735S chip, black tab
+    #endif
+    tft.setRotation(1);
+    tft.fillScreen(ST7735_BLACK);
+  #else
+    lcd.begin(16, 2, LCD_5x8DOTS);
+    lcd.setCursor(0, 0);
+    lcd.print("INITIALIZING...");
+  #endif
+
 }
 
 void setup() {
   //while(!Serial);
   delay(500);
   Serial.begin(9600);
-  Serial.println("Bluefruit LE Micro Battery Monitor");
-  Serial.print(F("Initializing Bluefruit LE Micro"));
+  Serial.println(F("Initializing Bluefruit LE Micro"));
 
-  #ifndef USE_TFT
-  lcd.begin(16, 2, LCD_5x8DOTS);
-  lcd.setCursor(0, 0);
-  lcd.print("INITIALIZING...");
-  #else
-  tft.initR(INITR_BLACKTAB);   // initialize a ST7735S chip, black tab
-  tft.setRotation(1);
-  tft.fillScreen(ST7735_BLACK);
+  initDisplay();
   showStatus("INITIALIZING...");
-  #endif
-  
+ 
   if(!ble.begin(VERBOSE_MODE)) {
     error(F("Couldn't find Bluefruit"));
   }
-  Serial.print(F("OK"));
+  Serial.println(F("OK"));
   
  if ( FACTORYRESET_ENABLE )
   {
