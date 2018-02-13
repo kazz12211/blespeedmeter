@@ -14,7 +14,7 @@
 
 
 #define USE_TFT 1
-#define USE_PDQ 1
+#define USE_PDQ 0
 
 #if USE_TFT
   #if USE_PDQ
@@ -38,7 +38,7 @@ Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ,BLUEFRUIT_SPI_R
   #if USE_PDQ
     PDQ_ST7735 tft;
   #else
-    Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC,TFT_MOSI, TFT_SCLK,  TFT_RST);
+    Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
   #endif
 #else
   SO1602A lcd(0x3c, 127);
@@ -107,7 +107,6 @@ double parseSpeed(uint8_t data[], uint16_t len) {
   Serial.print("SPEED: ");
   Serial.print(speed, 0);
   Serial.println();
-  lastSpeed = speed;
   return speed;
 }
 
@@ -118,6 +117,7 @@ void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
     double speed = parseSpeed(data, len);
     if(lastSpeed != speed) {
       displaySpeed(speed);
+      lastSpeed = speed;
     }
   }
 }
