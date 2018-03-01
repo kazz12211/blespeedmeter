@@ -13,84 +13,128 @@
 
 
 
-#define USE_TFT 1
+#define USE_LED 1
+#define USE_TFT 0
 #define USE_PDQ 0
 
-#if USE_TFT
-  #if USE_PDQ
-    #include <PDQ_GFX.h>
-    #include "PDQ_ST7735_config.h"
-    #include <PDQ_ST7735.h>
-  #else
-    #include <Adafruit_GFX.h>
-    #include "Adafruit_ST7735_config.h"
-    #include <Adafruit_ST7735.h>
-  #endif
+#if USE_LED
+  #include <MsTimer2.h>
 #else
-  #include "SO1602A.h"
+  #if USE_TFT
+    #if USE_PDQ
+      #include <PDQ_GFX.h>
+      #include "PDQ_ST7735_config.h"
+      #include <PDQ_ST7735.h>
+    #else
+      #include <Adafruit_GFX.h>
+      #include "Adafruit_ST7735_config.h"
+      #include <Adafruit_ST7735.h>
+    #endif
+  #else
+    #include "SO1602A.h"
+  #endif
 #endif
 
 #define FACTORYRESET_ENABLE      1
 //#define MODE_LED_BEHAVIOUR          "MODE"
 
 Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ,BLUEFRUIT_SPI_RST);
-#if USE_TFT
-  #if USE_PDQ
-    PDQ_ST7735 tft;
-  #else
-    Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
-  #endif
+
+#if USE_LED
+#define GREEN_LED_PIN   4
+#define YELLOW_LED_PIN  5
+#define RED_LED_PIN     6
 #else
-  SO1602A lcd(0x3c, 127);
+  #if USE_TFT
+    #if USE_PDQ
+      PDQ_ST7735 tft;
+    #else
+      Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+    #endif
+  #else
+    SO1602A lcd(0x3c, 127);
+  #endif
 #endif
 
 int32_t speedmeterId;
-double lastSpeed = 0;
+volatile double lastSpeed = 0;
+bool stateWaiting = false;
+bool stateConnected = false;
+bool stateWarn = false;
 
 void error(const __FlashStringHelper*err) {
   Serial.println(err);
-  while (1);
+  while (1) {
+  #if USE_LED
+    digitalWrite(GREEN_LED_PIN, HIGH);
+    digitalWrite(YELLOW_LED_PIN, HIGH);
+    digitalWrite(RED_LED_PIN, HIGH);
+    delay(500);
+    digitalWrite(GREEN_LED_PIN, LOW);
+    digitalWrite(YELLOW_LED_PIN, LOW);
+    digitalWrite(RED_LED_PIN, LOW);
+    delay(500);
+  #endif
+  }
 }
 
 void showStatus(char status[]) {
   Serial.println(status);
-  #if USE_TFT
-    tft.fillRect(10, 10, 150, 12, ST7735_BLACK);
-    tft.setCursor(10, 10);
-    tft.setTextColor(ST7735_WHITE);
-    tft.setTextWrap(true);
-    tft.print(status);
+  if(strcmp(status,"INITIALIZING...") == 0) {
+    stateWaiting = false;
+    stateConnected = false;
+  } else if(strcmp(status, "WAITING...") == 0) {
+    stateWaiting = true;
+    stateConnected = false;
+  } else if(strcmp(status, "CONNECTED") == 0) {
+    stateWaiting = false;
+    stateConnected = true;
+  }
+  
+  #if USE_LED
   #else
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(status);
+    #if USE_TFT
+      tft.fillRect(10, 10, 150, 12, ST7735_BLACK);
+      tft.setCursor(10, 10);
+      tft.setTextColor(ST7735_WHITE);
+      tft.setTextWrap(true);
+      tft.print(status);
+    #else
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print(status);
+    #endif
   #endif
 }
 
 void displaySpeed(double value) {
-  #if USE_TFT
-    tft.fillRect(40, 40, 70, 32, ST7735_BLACK);
-    tft.setTextColor(ST7735_WHITE);
-    tft.setTextWrap(true);
-    if(value >= 10 && value < 100) {
-      tft.setCursor(64, 40);
-    } else if(value >= 100) {
-      tft.setCursor(40, 40);
-    } else {
-      tft.setCursor(88, 40);
-    }
-    tft.setTextSize(4);
-    tft.print(value, 0);
-    tft.setCursor(112, 60);
-    tft.setTextSize(1);
-    tft.print("km/h");
+  #if USE_LED
   #else
-    lcd.setCursor(0, 1);
-    lcd.print("                ");
-    lcd.setCursor(0, 1);
-    lcd.print(value, 0);
-    lcd.print("km/h");
+    #if USE_TFT
+      tft.fillRect(40, 40, 70, 32, ST7735_BLACK);
+      tft.setTextColor(ST7735_WHITE);
+      tft.setTextWrap(true);
+      if(value >= 10 && value < 100) {
+        tft.setCursor(64, 40);
+      } else if(value >= 100) {
+        tft.setCursor(40, 40);
+      } else {
+        tft.setCursor(88, 40);
+      }
+      tft.setTextSize(4);
+      tft.print(value, 0);
+      tft.setCursor(112, 60);
+      tft.setTextSize(1);
+      tft.print("km/h");
+    #else
+      lcd.setCursor(0, 1);
+      lcd.print("                ");
+      lcd.setCursor(0, 1);
+      lcd.print(value, 0);
+      lcd.print("km/h");
+    #endif
   #endif
+  lastSpeed = value;
 }
 
 double parseSpeed(uint8_t data[], uint16_t len) {
@@ -115,10 +159,7 @@ void readSpeed(int32_t charId, uint8_t data[], uint16_t len) {
    
   if(charId == speedmeterId) {
     double speed = parseSpeed(data, len);
-    if(lastSpeed != speed) {
-      displaySpeed(speed);
-      lastSpeed = speed;
-    }
+    displaySpeed(speed);
   }
 }
 
@@ -126,9 +167,7 @@ void readUart(char data[], uint16_t len) {
   Serial.println("Read UART");
   
   double speed = parseSpeed(data, len);
-  if(lastSpeed != speed) {
-    displaySpeed(speed);
-  }
+  displaySpeed(speed);
 }
 
 void connected() {
@@ -142,28 +181,62 @@ void disconnected() {
 }
 
 void initDisplay() {
-  #if USE_TFT
-    #if USE_PDQ
-      #if defined(ST7735_RST_PIN)
-        FastPin<ST7735_RST_PIN>::setOutput();
-        FastPin<ST7735_RST_PIN>::hi();
-        FastPin<ST7735_RST_PIN>::lo();
-        delay(1);
-        FastPin(ST7735_RST_PIN>::hi();
-      #endif
-      tft.begin();
-    #else
-      tft.initR(INITR_BLACKTAB);   // initialize a ST7735S chip, black tab
-    #endif
-    tft.setRotation(1);
-    tft.fillScreen(ST7735_BLACK);
+  #if USE_LED
+    pinMode(GREEN_LED_PIN, OUTPUT);
+    pinMode(YELLOW_LED_PIN, OUTPUT);
+    pinMode(RED_LED_PIN, OUTPUT);
+    digitalWrite(GREEN_LED_PIN, LOW);
+    digitalWrite(YELLOW_LED_PIN, LOW);
+    digitalWrite(RED_LED_PIN, LOW);
   #else
-    lcd.begin(16, 2, LCD_5x8DOTS);
-    lcd.setCursor(0, 0);
-    lcd.print("INITIALIZING...");
+    #if USE_TFT
+      #if USE_PDQ
+        #if defined(ST7735_RST_PIN)
+          FastPin<ST7735_RST_PIN>::setOutput();
+          FastPin<ST7735_RST_PIN>::hi();
+          FastPin<ST7735_RST_PIN>::lo();
+          delay(1);
+          FastPin(ST7735_RST_PIN>::hi();
+        #endif
+        tft.begin();
+      #else
+        tft.initR(INITR_BLACKTAB);   // initialize a ST7735S chip, black tab
+      #endif
+      tft.setRotation(1);
+      tft.fillScreen(ST7735_BLACK);
+    #else
+      lcd.begin(16, 2, LCD_5x8DOTS);
+      lcd.setCursor(0, 0);
+      lcd.print("INITIALIZING...");
+    #endif
   #endif
-
 }
+
+#if USE_LED
+void handleSpeed() {
+  static bool yellow = LOW;
+  static bool red = LOW;
+
+  if (lastSpeed >= 50 && lastSpeed < 70) {
+    digitalWrite(YELLOW_LED_PIN, HIGH);
+    digitalWrite(RED_LED_PIN, LOW);
+  } else if(lastSpeed >= 70 && lastSpeed < 100) {
+    digitalWrite(YELLOW_LED_PIN, yellow);
+    digitalWrite(RED_LED_PIN, LOW);
+    yellow = !yellow;
+  } else if(lastSpeed >= 100 && lastSpeed < 110) {
+    digitalWrite(YELLOW_LED_PIN, LOW);
+    digitalWrite(RED_LED_PIN, HIGH);
+  } else if(lastSpeed >= 110 && lastSpeed < 400) {
+    digitalWrite(YELLOW_LED_PIN, LOW);
+    digitalWrite(RED_LED_PIN, red);
+    red = !red;
+  } else {
+    digitalWrite(YELLOW_LED_PIN, LOW);
+    digitalWrite(RED_LED_PIN, LOW);
+  }
+}
+#endif
 
 void setup() {
   //while(!Serial);
@@ -209,9 +282,14 @@ void setup() {
   ble.setBleGattRxCallback(speedmeterId, readSpeed);
   ble.setBleUartRxCallback(readUart);
 
-  disconnected(); 
+  disconnected();
+
+  #if USE_LED
+    MsTimer2::set(300, handleSpeed);
+    MsTimer2::start();
+  #endif
 }
 
 void loop() {
   ble.update(200);
-}
+ }
